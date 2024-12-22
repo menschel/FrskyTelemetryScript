@@ -131,6 +131,10 @@ telemetry.fencePresent = 0
 telemetry.fenceBreached = 0
 telemetry.throttle = 0
 telemetry.imuTemp = 0
+
+-- CRSF FLIGHTMODE
+telemetry.flightmodetext = nil
+
 -- GPS
 telemetry.numSats = 0
 telemetry.gpsStatus = 0
@@ -775,6 +779,19 @@ local function processTelemetry(appId, value, now)
 end
 
 local function processStdCrsfBatterySensor(data, now)
+    --[[
+    All items are consumed but it would make sense to swap the usage downstream
+    and use remaining directly!
+
+    //CRSF_FRAMETYPE_BATTERY_SENSOR
+    typedef struct crsf_sensor_battery_s
+    {
+        unsigned voltage : 16;  // .1V BigEndian
+        unsigned current : 16;  // .1A BigEndian
+        unsigned capacity : 24; // mah BigEndian
+        unsigned remaining : 8; // %
+    } PACKED crsf_sensor_battery_t;
+    ]]
     -- already in the correct format Volt with 1 decimal
     telemetry.batt1volt =  (bit32.lshift(data[1],8) + data[0])
     -- already in the correct format Amp with 1 decimal
@@ -787,20 +804,68 @@ local function processStdCrsfBatterySensor(data, now)
 end
 
 local function processStdCrsfGPS(data, now)
-    telemetry.gpsAlt = ((bit32.lshift(data[13],8) + data[12]) - 1000) / 10 -- meters + 1000m offset converted to a 10m scale without offset
+    --[[
+    Only items altitude and satelites are consumed!
+
+    FIXME: unfilled values telemetry.gpsHdopC, telemetry.gpsStatus
+
+    // CRSF_FRAMETYPE_GPS
+    typedef struct crsf_sensor_gps_s
+    {
+        int32_t latitude; // degree / 10`000`000
+        int32_t longitude; // degree / 10`000`000
+        uint16_t groundspeed; // km/h / 10
+        uint16_t gps_heading; // degree / 100
+        uint16_t altitude; // meter 1000m offset
+        uint8_t satellites_in_use; // counter
+    } PACKED crsf_sensor_gps_t;
+    ]]
+    telemetry.gpsAlt = ((bit32.lshift(data[13],8) + data[12]) - 1000) / 10
+    -- meters + 1000m offset converted to a 10m scale without offset
     telemetry.numSats = data[14]
-    -- telemetry.gpsHdopC = data[14]
-    -- telemetry.gpsStatus = 0
     return
 end
 
 local function processStdCrsfAttitude(data, now)
+    --[[
+    All items are consumed!
+
+    // CRSF_FRAMETYPE_ATTITUDE
+    typedef struct crsf_sensor_attitude_s
+    {
+        int16_t pitch; // radians * 10000
+        int16_t roll; // radians * 10000
+        int16_t yaw; // radians * 10000
+    } PACKED crsf_sensor_attitude_t;
+    ]]
     -- conversion (radians * 10000) to (degree * 0.2)
     telemetry.pitch = (bit32.lshift(data[1],8) + data[0]) / 10000 * 57.295779513 * 0.2
     telemetry.roll = (bit32.lshift(data[3],8) + data[2]) / 10000 * 57.295779513 * 0.2
     telemetry.yaw = (bit32.lshift(data[5],8) + data[4]) / 10000 * 57.295779513 * 0.2
     return
 end
+
+local function processStdCrsfFlightMode(data, now)
+    --[[
+    ELRS MAVLINK to CRSF appends a "*"
+    to the Flight Mode if armed
+
+    // CRSF_FRAMETYPE_FLIGHT_MODE
+    typedef struct crsf_sensor_flight_mode_s
+    {
+        char flight_mode[16];
+    } PACKED crsf_flight_mode_t;
+    ]]
+    if (data[strlen(data)-1] == "*")
+        telemetry.flightmodetext = string.substr(data, 0, [strlen(data)-2])
+        telemetry.statusArmed = 1
+    else
+        telemetry.flightmodetext = string.substr(data, 0, [strlen(data)-1])
+        telemetry.statusArmed = 0
+    return
+end
+
+
 
 local function crossfirePop()
     local now = getTime()
@@ -855,6 +920,10 @@ local function crossfirePop()
     if (command == 0x1E) then
         -- CRSF_FRAMETYPE_ATTITUDE
         processStdCrsfAttitude(data, now)
+    end
+    if (command == 0x21) then
+        -- CRSF_FRAMETYPE_FLIGHT_MODE
+        processStdCrsfFlightMode(data, now)
     end
     return nil, nil ,nil ,nil
 end
@@ -1267,6 +1336,8 @@ end
 
 
 local function getFlightMode()
+  if telemetry.flightmodetext ~= nil
+    return telemetry.flightmodetext
   if frame.flightModes then
     return frame.flightModes[telemetry.flightMode]
   else
