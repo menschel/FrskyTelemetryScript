@@ -856,12 +856,13 @@ local function processStdCrsfFlightMode(data, now)
         char flight_mode[16];
     } PACKED crsf_flight_mode_t;
     ]]
-    if (data[strlen(data)-1] == "*")
-        telemetry.flightmodetext = string.substr(data, 0, [strlen(data)-2])
+    if (data[string.strlen(data)-1] == "*") then
+        telemetry.flightmodetext = string.substr(data, 0, string.strlen(data)-2)
         telemetry.statusArmed = 1
     else
-        telemetry.flightmodetext = string.substr(data, 0, [strlen(data)-1])
+        telemetry.flightmodetext = string.substr(data, 0, string.strlen(data)-1)
         telemetry.statusArmed = 0
+    end
     return
 end
 
@@ -908,20 +909,16 @@ local function crossfirePop()
         noTelemetryData = 0
         hideNoTelemetry = true
       end
-    end
-    if (command == 0x08) then
+    elseif (command == 0x08) then
         -- CRSF_FRAMETYPE_BATTERY_SENSOR
         processStdCrsfBatterySensor(data, now)
-    end
-    if (command == 0x02) then
+    elseif (command == 0x02) then
         -- CRSF_FRAMETYPE_GPS
         processStdCrsfGPS(data, now)
-    end
-    if (command == 0x1E) then
+    elseif (command == 0x1E) then
         -- CRSF_FRAMETYPE_ATTITUDE
         processStdCrsfAttitude(data, now)
-    end
-    if (command == 0x21) then
+    elseif (command == 0x21) then
         -- CRSF_FRAMETYPE_FLIGHT_MODE
         processStdCrsfFlightMode(data, now)
     end
@@ -1336,9 +1333,9 @@ end
 
 
 local function getFlightMode()
-  if telemetry.flightmodetext ~= nil
+  if telemetry.flightmodetext ~= nil then
     return telemetry.flightmodetext
-  if frame.flightModes then
+  elseif frame.flightModes then
     return frame.flightModes[telemetry.flightMode]
   else
     return nil
