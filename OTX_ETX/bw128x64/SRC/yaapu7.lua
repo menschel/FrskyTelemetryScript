@@ -774,6 +774,33 @@ local function processTelemetry(appId, value, now)
   end
 end
 
+local function processStdCrsfBatterySensor(data, now)
+    -- already in the correct format Volt with 1 decimal
+    telemetry.batt1volt =  (bit32.lshift(data[1],8) + data[0])
+    -- already in the correct format Amp with 1 decimal
+    telemetry.batt1current = (bit32.lshift(data[3],8) + data[2])
+    -- already in the correct format milliAmpHours
+    telemetry.batt1mah = (bit32.lshift(data[6],16) + bit32.lshift(data[5],8) + data[4])
+    -- this could actually be telemetry.batt1remainingpercentage = data[7] instead of this nasty capacity calc
+    telemetry.batt1Capacity = (telemetry.batt1mah * 100) / data[7]
+    return
+end
+
+local function processStdCrsfGPS(data, now)
+    telemetry.gpsAlt = ((bit32.lshift(data[13],8) + data[12]) - 1000) / 10 -- meters + 1000m offset converted to a 10m scale without offset
+    telemetry.numSats = data[14]
+    -- telemetry.gpsHdopC = data[14]
+    -- telemetry.gpsStatus = 0
+    return
+end
+
+local function processStdCrsfAttitude(data, now)
+    -- conversion (radians * 10000) to (degree * 0.2)
+    telemetry.pitch = (bit32.lshift(data[1],8) + data[0]) / 10000 * 57.295779513 * 0.2
+    telemetry.roll = (bit32.lshift(data[3],8) + data[2]) / 10000 * 57.295779513 * 0.2
+    telemetry.yaw = (bit32.lshift(data[5],8) + data[4]) / 10000 * 57.295779513 * 0.2
+    return
+end
 
 local function crossfirePop()
     local now = getTime()
@@ -816,6 +843,18 @@ local function crossfirePop()
         noTelemetryData = 0
         hideNoTelemetry = true
       end
+    end
+    if (command == 0x08) then
+        -- CRSF_FRAMETYPE_BATTERY_SENSOR
+        processStdCrsfBatterySensor(data, now)
+    end
+    if (command == 0x02) then
+        -- CRSF_FRAMETYPE_GPS
+        processStdCrsfGPS(data, now)
+    end
+    if (command == 0x1E) then
+        -- CRSF_FRAMETYPE_ATTITUDE
+        processStdCrsfAttitude(data, now)
     end
     return nil, nil ,nil ,nil
 end
